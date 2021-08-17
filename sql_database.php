@@ -20,7 +20,6 @@ namespace SQL
         public function __construct(private Gateway $gateway) {}
 
         //==============================================================================================================
-
         /** @throws Exception */
         public function findTables()
         {
@@ -58,6 +57,13 @@ namespace SQL
             return DatabaseSchema::fromTables($this->tables);
         }
 
+        /** @throws Exception */
+        public function makeAndApplySchema() : bool
+        {
+            $schema = $this->generateSchema();
+            return $this->gateway->request($schema->exportSchema(true))->success;
+        }
+
         //==============================================================================================================
         public function tableExistsOnline(string $tableName) : bool
         {
@@ -72,9 +78,7 @@ namespace SQL
         public function getGateway() : Gateway { return $this->gateway; }
 
         //==============================================================================================================
-        /**
-         * @throws Exception
-         */
+        /** @throws Exception */
         private function verifyNoCircularReferences(TableDefinition $table)
         {
             foreach ($table->constraints['reference'] as $reference)

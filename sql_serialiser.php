@@ -139,7 +139,6 @@ namespace SQL
 
                 foreach ($attributes as $key=>$value)
                 {
-
                     if ($key == Unique::class)
                     {
                         foreach ($value as $att_unique)
@@ -260,7 +259,7 @@ namespace SQL
                         $enumSet = $con_att->getArguments()[0];
                     }
 
-                    $default = "NULL";
+                    $default = ($col_def->nullable ? 'NULL' : '');
 
                     if (array_key_exists(DefaultsTo::class, $attributes))
                     {
