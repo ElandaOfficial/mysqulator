@@ -25,6 +25,7 @@ use sql\mod\Ignore;
 use sql\mod\NamingStrategy;
 use sql\mod\PrimaryKey;
 use sql\mod\Record;
+use sql\mod\Table;
 use sql\mod\Trigger;
 use sql\mod\Type;
 use sql\mod\Unsigned;
