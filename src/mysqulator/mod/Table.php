@@ -9,5 +9,9 @@ namespace sql\mod;
 use Attribute;
 
 //======================================================================================================================
-#[Attribute(Attribute::TARGET_CLASS | Attribute::TARGET_PROPERTY)]
-class Ignore {}
+#[Attribute(Attribute::TARGET_CLASS)]
+class Table
+{
+    //==================================================================================================================
+    public function __construct(public string $name = "") {}
+}
