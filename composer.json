@@ -1,0 +1,22 @@
+{
+    "name": "elandaofficial/mysqulator",
+    "description": "A quick and dirty PHP 8.0 attribute MySql utility library",
+    "minimum-stability": "stable",
+    "license": "GPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Elanda",
+            "email": "elendaofficial@gmail.com",
+            "homepage": "elandasunshine.xyz"
+        }
+    ],
+    "require": {
+       "php": ">=8.0",
+       "ext-pdo": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "sql\\": "src/mysqulator/"
+        }
+    }
+}
