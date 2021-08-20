@@ -8,6 +8,8 @@ namespace sql;
 //======================================================================================================================
 use Exception;
 use JetBrains\PhpStorm\ArrayShape;
+use sql\mod\constraint\Reference;
+use sql\mod\constraint\Unique;
 use sql\mod\Trigger;
 
 //======================================================================================================================
@@ -23,7 +25,7 @@ class TableDefinition
      *
      *  @param string             $name             The name of the table
      *  @param string|null        $primaryKeyColumn The primary column name
-     *  @param ColumnDefinition[] $columns          An array of columnd definitions
+     *  @param ColumnDefinition[] $columns          An array of column definitions
      *  @param array              $constraints      An array of table constraints
      *  @param Trigger[]          $triggers         An array of table triggers
      *  @throws Exception
@@ -32,8 +34,8 @@ class TableDefinition
                                 public ?string $primaryKeyColumn,
                                 public array   $columns,
 
-                                #[ArrayShape(['unique'    => 'mysqulator\Constraint\Unique[]',
-                                              'reference' => 'mysqulator\Constraint\Reference[]'])]
+                                #[ArrayShape(['unique'    => 'sql\mod\constraint\Unique[]',
+                                              'reference' => 'sql\mod\constraint\Reference[]'])]
                                 public array $constraints,
                                 public array $triggers)
     {}

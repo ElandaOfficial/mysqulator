@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace sql;
 
 //======================================================================================================================
+use Exception;
 use ReflectionException;
 
 //======================================================================================================================
@@ -62,41 +63,20 @@ class Table
         return $this->definition->triggers;
     }
 
-    //==================================================================================================================
-    public function createTableQuery(bool $onlyIfNotExists = false, bool $deferForeignKeys = false) : string
+    public function getDefinition() : TableDefinition
     {
-        $ignore      = ($onlyIfNotExists ? 'IF NOT EXISTS ' : '');
-        $columns     = array_map('self::getColumnString', $this->definition->columns);
-        $constraints = [];
-
-        foreach ($this->getUniqueConstraints() as $unique_constraint)
-        {
-            $values        = array_map(function($val) { return "`{$val}`"; }, $unique_constraint->columns);
-            $constraints[] = "UNIQUE `{$unique_constraint->name}`(".implode(',', $values).")";
-        }
-
-        if (!$deferForeignKeys)
-        {
-            foreach ($this->getForeignKeys() as $reference_constraint)
-            {
-                $constraints[] = "FOREIGN KEY(`{$reference_constraint->column}`) " .
-                    "REFERENCES `{$reference_constraint->table}`(`{$reference_constraint->referenceColumn}`)";
-            }
-        }
-
-        return "CREATE TABLE {$ignore}`{$this->definition->name}`\n"
-              ."(\n"
-              ."    ".implode(",\n    ", $columns).(count($constraints) > 0 ? ',' : '')
-              .(count($constraints) > 0 ? "\n    " : '')
-              .implode(",\n    ", $constraints)."\n"
-              .");";
+        return $this->definition;
     }
 
-    public function dropTableQuery(bool $onlyIfExists = false) : string
+    //==================================================================================================================
+    public function createTableQuery(bool $ifNotExists = false, bool $deferForeignKeys = false) : string
     {
-        $ignore = ($onlyIfExists ? 'IF EXISTS ' : '');
-        return "DROP TABLE {$ignore}\n"
-              ."    `{$this->definition->name}`;";
+        return Serialiser::queryCreateTable($this->definition, $ifNotExists, $deferForeignKeys);
+    }
+
+    public function dropTableQuery(bool $ifExists = false) : string
+    {
+        return Serialiser::queryDropTable($this->getName(), $ifExists);
     }
 
     public function truncateTableQuery() : string
@@ -106,31 +86,10 @@ class Table
 
     public function alterTableForeignKeyQuery() : string
     {
-        $add_instructions = [];
-
-        foreach ($this->getForeignKeys() as $reference)
-        {
-            $add_instructions[] = "ADD FOREIGN KEY(`{$reference->column}`) REFERENCES "
-                                 ."`{$reference->table}`(`{$reference->referenceColumn}`)";
-        }
-
-        return "ALTER TABLE `{$this->definition->name}`\n".implode(",\n", $add_instructions).';';
+        return Serialiser::queryAlterTableAddForeignKeys($this->definition);
     }
 
     //==================================================================================================================
-    private static function getColumnString(ColumnDefinition $column) : string
-    {
-        $type      = self::getTypeFromColumn($column);
-        $not_null  = ($column->nullable                    ? '' : ' NOT NULL');
-        $default   = (trim($column->default) == ''         ? '' : ' DEFAULT '.trim($column->default));
-        $ai        = (!$column->autoIncrement              ? '' : ' AUTO_INCREMENT');
-        $unique    = (!$column->unique || $column->primary ? '' : ' UNIQUE');
-        $primary   = (!$column->primary                    ? '' : ' PRIMARY KEY');
-        $on_update = (!$column->updateTimestamp            ? '' : ' ON UPDATE CURRENT_TIMESTAMP');
-
-        return "`{$column->name}` {$type}{$not_null}{$default}{$ai}{$unique}{$primary}{$on_update}";
-    }
-
     private static function getTypeFromColumn(ColumnDefinition $definition) : string
     {
         $unsigned_string = ($definition->unsigned ? ' UNSIGNED' : '');

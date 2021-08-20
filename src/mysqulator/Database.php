@@ -7,6 +7,7 @@ namespace sql
 {
     //==================================================================================================================
     use Exception;
+    use PDO;
     use ReflectionException;
 
     //==================================================================================================================
@@ -21,7 +22,8 @@ namespace sql
          *  @param string $user     The mysql username
          *  @param string $password The mysql password
          *  @param string $database The mysql database name
-         *  @param int    $port     [Optional] If specified, the port of the database, otherwise the default 3306 will be used
+         *  @param int    $port     [Optional] If specified, the port of the database,
+         *                          otherwise the default 3306 will be used
          *  @return static A new Database instance
          */
         public static function fromDetails(string $host, string $user, string $password, string $database,
@@ -89,31 +91,25 @@ namespace sql
         }
 
         /**
-         *  Generates a new database schema internally and tries execute it.
+         *  Generates a new database schema internally and tries to execute it.
          *  @throws Exception
          */
         public function makeAndApplySchema() : bool
         {
             $schema = $this->generateSchema();
+
+            $schema->createTables($this->gateway, true);
+            $schema->createTriggers($this->gateway, true);
+
             $this->gateway->beginTransaction();
 
-            if ($schema->hasTables())
+            if ($schema->insertRecords ($this->gateway, true) === false)
             {
-                $this->gateway->request($schema->exportTableSchema(true));
-            }
-
-            if ($schema->hasTriggers())
-            {
-                $this->gateway->getConnection()->exec($schema->exportTriggerSchema(true));
-            }
-
-            if ($schema->hasRecords())
-            {
-                $this->gateway->request($schema->exportRecordSchema(true));
+                $this->gateway->abortTransaction();
+                return false;
             }
 
             $this->gateway->endTransaction();
-
             return true;
         }
 
@@ -143,7 +139,7 @@ namespace sql
          *
          *  @param string $class                 The table class of the corresponding table to read
          *  @param string $additionalConstraints Additional SQL query constraints for the select query
-         *  @return array|null An array of records or null if no such table was found
+         *  @return object[] | null An array of objects or null if an error occurred
          */
         public function readTableForClass(string $class, string $additionalConstraints = '') : ?array
         {
@@ -153,10 +149,59 @@ namespace sql
             {
                 $stmt = $this->gateway->request("SELECT * FROM `{$table->getName()}` {$additionalConstraints};")
                              ->statement;
-                return $stmt->fetchAll();
+                return $stmt->fetchAll(PDO::FETCH_CLASS, $class);
             }
 
             return null;
+        }
+
+        /** @throws Exception */
+        public function insertNewRecord(string $tableClass, array $values) : bool
+        {
+            $table = $this->findTableByClass($tableClass);
+
+            if (is_null($table))
+            {
+                return false;
+            }
+
+            $query = Serialiser::queryInsertIntoTable($table->getDefinition(), $values, true);
+            return $this->gateway->request($query, array_values($values))->success;
+        }
+
+        /** @throws Exception */
+        public function updateRecord(object $tableObject, string $whereColumn) : bool
+        {
+            $table = $this->findTableByClass(get_class($tableObject));
+
+            if (is_null($table))
+            {
+                return false;
+            }
+
+            if (!array_key_exists($whereColumn, $table->getColumns()))
+            {
+                throw new Exception("Column '{$whereColumn}' does not exist in table '{$table->getName()}'");
+            }
+
+            $value_list   = array_values((array) $tableObject);
+            $column_names = array_keys($table->getColumns());
+            $values       = [];
+
+            for ($i = 0; $i < count($value_list); ++$i)
+            {
+                $name = $column_names[$i];
+
+                if ($name != $whereColumn)
+                {
+                    $values[] = $value_list[$i];
+                }
+            }
+
+            $id_value = $value_list[array_search($whereColumn, $column_names)];
+            $query    = Serialiser::queryUpdate($table->getDefinition(), exclude: [$whereColumn],
+                                                additionalConstraints: "WHERE `{$whereColumn}`='{$id_value}'");
+            return $this->gateway->request($query, $values)->success;
         }
 
         //==============================================================================================================

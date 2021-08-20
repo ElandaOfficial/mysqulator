@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace sql;
 
 //======================================================================================================================
+use Exception;
 use PDO;
 
 //======================================================================================================================
@@ -18,6 +19,7 @@ class Gateway
     //==================================================================================================================
     private ?PDO   $mysql;
     private string $lastQuery;
+    private string $lastError;
 
     //==================================================================================================================
     /**
@@ -52,7 +54,17 @@ class Gateway
     {
         $this->lastQuery = $query;
         $stmt            = $this->mysql->prepare($query);
-        $succ            = $stmt->execute($data);
+
+        try
+        {
+            $succ = $stmt->execute($data);
+        }
+        catch (Exception $ex)
+        {
+            $this->lastError = $ex->getMessage();
+            $succ            = false;
+        }
+
         return new RequestResult($succ, $stmt);
     }
 
@@ -280,11 +292,15 @@ class Gateway
      *  Gets the last executed query string.
      *  @return string The query string
      */
-    public function getLastQuery() : string { return $this->lastQuery; }
+    public function getLastQuery()        : string { return $this->lastQuery; }
+    public function getLastErrorMessage() : string { return $this->lastError; }
 
     //==================================================================================================================
     /** Tells the PDO that a batch operation is about to begin. */
     public function beginTransaction() { $this->mysql->beginTransaction(); }
+
+    /** Tells the PDO that a batch operation failed and that it should roll back all changes. */
+    public function abortTransaction() { $this->mysql->rollBack(); }
 
     /** Tells the PDO to stop and commit the last batch operation. */
     public function endTransaction() { $this->mysql->commit(); }

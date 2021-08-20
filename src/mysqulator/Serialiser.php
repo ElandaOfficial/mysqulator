@@ -147,6 +147,169 @@ abstract class Serialiser
     }
 
     //==================================================================================================================
+    public static function queryCreateTable(TableDefinition $tableDefinition,
+                                            bool $ifNotExists = false, bool $deferForeignKeys = false) : string
+    {
+        $ignore = ($ifNotExists ? 'IF NOT EXISTS ' : '');
+        $output = "CREATE TABLE {$ignore}`{$tableDefinition->name}`\n"
+            ."(\n";
+
+        foreach ($tableDefinition->columns as $column)
+        {
+            $output .= "    ".self::queryElementTableColumn($column).",\n";
+        }
+
+        foreach ($tableDefinition->constraints['unique'] as $unique_constraint)
+        {
+            $output .= "    ".self::queryElementUniqueConstraint($unique_constraint).",\n";
+        }
+
+        if (!$deferForeignKeys)
+        {
+            foreach ($tableDefinition->constraints['reference'] as $reference_constraint)
+            {
+                $output .= "    ".self::queryElementForeignKeyConstraint($reference_constraint).",\n";
+            }
+        }
+
+        return substr($output, 0, -2)."\n)";
+    }
+
+    /**
+     * @param TableDefinition $tableDefinition
+     * @return string
+     */
+    public static function queryAlterTableAddForeignKeys(TableDefinition $tableDefinition) : string
+    {
+        if (!array_key_exists('reference', $tableDefinition->constraints))
+        {
+            return "";
+        }
+
+        $output = "ALTER TABLE `{$tableDefinition->name}`\n";
+
+        foreach ($tableDefinition->constraints['reference'] as $foreign_key)
+        {
+            $output .= "ADD FOREIGN KEY(`{$foreign_key->column}`"
+                ."REFERENCES `{$foreign_key->table}`(`{$foreign_key->referenceColumn}`),\n";
+        }
+
+        return substr($output, 0, -2);
+    }
+
+    public static function queryDropTable(string $tableName, bool $ifExists) : string
+    {
+        $ignore = ($ifExists ? 'IF EXISTS ' : '');
+        return "DROP TABLE {$ignore}`{$tableName}`";
+    }
+
+    public static function queryElementUniqueConstraint(Unique $uniqueConstraint) : string
+    {
+        $values = array_map(function($val) { return "`{$val}`"; }, $uniqueConstraint->columns);
+        return "UNIQUE `{$uniqueConstraint->name}`(".implode(',', $values).")";
+    }
+
+    public static function queryElementForeignKeyConstraint(Reference $referenceConstraint) : string
+    {
+        return "FOREIGN KEY(`{$referenceConstraint->column}`) " .
+            "REFERENCES `{$referenceConstraint->table}`(`{$referenceConstraint->referenceColumn}`)";
+    }
+
+    public static function queryElementTableColumn(ColumnDefinition $column) : string
+    {
+        $type      = self::getTypeFromColumn($column);
+        $not_null  = ($column->nullable                    ? '' : ' NOT NULL');
+        $default   = (trim($column->default) == ''         ? '' : ' DEFAULT '.trim($column->default));
+        $ai        = (!$column->autoIncrement              ? '' : ' AUTO_INCREMENT');
+        $unique    = (!$column->unique || $column->primary ? '' : ' UNIQUE');
+        $primary   = (!$column->primary                    ? '' : ' PRIMARY KEY');
+        $on_update = (!$column->updateTimestamp            ? '' : ' ON UPDATE CURRENT_TIMESTAMP');
+
+        return "`{$column->name}` {$type}{$not_null}{$default}{$ai}{$unique}{$primary}{$on_update}";
+    }
+
+    //==================================================================================================================
+    public static function querySelectFromTable(TableDefinition $tableDefinition,
+                                                array  $columns               = null,
+                                                string $additionalConstraints = "") : string
+    {
+        $columns_temp = [];
+
+        if (is_null($columns) || count($columns) == 0)
+        {
+            $columns_temp[] = '*';
+        }
+        else
+        {
+            foreach ($columns as $name)
+            {
+                if (!array_key_exists($name, $tableDefinition->columns))
+                {
+                    throw new Exception("Insert query exception, no column named '{$name}' in table "
+                        . "'{$tableDefinition->name}'");
+                }
+
+                $columns_temp[] = "`{$name}`";
+            }
+        }
+
+        return "SELECT ".implode(',', $columns_temp)." FROM `{$tableDefinition->columns}`"
+                   .(trim($additionalConstraints) != '' ? "\n" : '')
+               .$additionalConstraints;
+    }
+
+    /** @throws Exception */
+    public static function queryInsertIntoTable(TableDefinition $tableDefinition, array $values,
+                                                bool $ifNotExists = false) : string
+    {
+        $ignore  = ($ifNotExists ? 'IGNORE ' : '');
+        $columns = [];
+
+        foreach (array_keys($values) as $name)
+        {
+            if (!array_key_exists($name, $tableDefinition->columns))
+            {
+                throw new Exception("Insert query exception, no column named '{$name}' in table "
+                                   ."'{$tableDefinition->name}'");
+            }
+
+            $columns[] = "`{$name}`";
+        }
+
+        return "INSERT {$ignore}INTO `{$tableDefinition->name}`\n"
+              ."    (".implode(',', $columns).")\n"
+              ."VALUES\n"
+              ."    (".substr(str_repeat("?,", count($columns)), 0, -1).")";
+    }
+
+    /** @throws Exception */
+    public static function queryUpdate(TableDefinition $tableDefinition,
+                                       ?array          $values                = null,
+                                       ?array          $exclude               = [],
+                                       string          $additionalConstraints = "") : string
+    {
+        $columns = [];
+
+        foreach (array_keys($values ?? $tableDefinition->columns) as $name)
+        {
+            if (!array_key_exists($name, $tableDefinition->columns))
+            {
+                throw new Exception("Update query exception, no column named '{$name}' in table "
+                                   ."'{$tableDefinition->name}'");
+            }
+
+            if (!in_array($name, $exclude))
+            {
+                $columns[] = "`{$name}`=?";
+            }
+        }
+
+        return "UPDATE `{$tableDefinition->name}`\n"
+              ."SET ".implode(",\n    ", $columns).(trim($additionalConstraints) != '' ? "\n" : '')
+              .$additionalConstraints;
+    }
+
+    //==================================================================================================================
     /**
      *  @param ReflectionAttribute[] $classAttributes
      *  @param ReflectionProperty[] $classProperties
@@ -248,7 +411,6 @@ abstract class Serialiser
     }
 
     //==================================================================================================================
-
     /**
      *  @param ReflectionClass | ReflectionProperty | ReflectionMethod $attributeHolder
      *  @throws ReflectionException
