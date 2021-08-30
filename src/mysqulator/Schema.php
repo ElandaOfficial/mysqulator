@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 //======================================================================================================================
-namespace sql;
+namespace elsa\sql;
 
 //======================================================================================================================
 use ReflectionClass;
 use ReflectionException;
-use sql\mod\Record;
+use elsa\sql\mod\Record;
 
 //======================================================================================================================
 /**
@@ -19,13 +19,13 @@ class Schema
 {
     //==================================================================================================================
     /**
-     *  Create a Schema from an array of Table objects.
+     *  Create a Schema from an array of Entity objects.
      *
-     *  @param Table[] $tables The array of Tables
+     *  @param Entity[] $tables The array of Tables
      *  @return static A new Schema instance
      *  @throws ReflectionException
      */
-    public static function fromTables(array $tables) : static
+    public static function fromEntities(array $tables) : static
     {
         $expressions = [];
         $hasTriggers = false;
@@ -35,10 +35,10 @@ class Schema
         {
             $expression = [];
 
-            $query                = $table->createTableQuery();
+            $query                = Serialiser::queryCreateTable($table->getTableDefinition());
             $expression['create'] = substr_replace($query, ' %IF_NOT_EXISTS%', strlen("CREATE TABLE"), 0);
 
-            if (count($table->getTriggers()) > 0)
+            if (count($table->getTableTriggers()) > 0)
             {
                 $expression['triggers'] = self::createTriggerQueries($table);
                 $hasTriggers = true;
@@ -53,26 +53,26 @@ class Schema
             }
 
             $expression['meta'] = [
-                'references'=>array_map(function($ref) { return $ref->table; }, $table->getForeignKeys())
+                'references'=>array_map(function($ref) { return $ref->table; }, $table->getTableForeignKeys())
             ];
-            $expressions[$table->getName()] = $expression;
+            $expressions[$table->getTableName()] = $expression;
         }
 
         return new Schema($expressions, $hasTriggers, $hasRecords);
     }
 
     //==================================================================================================================
-    private static function createTriggerQueries(Table $definition) : array
+    private static function createTriggerQueries(Entity $definition) : array
     {
         $queries       = [];
         $trigger_time  = ['BEFORE', 'AFTER'];
         $trigger_event = ['INSERT', 'UPDATE', 'DELETE'];
 
-        foreach ($definition->getTriggers() as $trigger)
+        foreach ($definition->getTableTriggers() as $trigger)
         {
             $queries[$trigger->name] = "CREATE TRIGGER {$trigger->name}\n"
                                       ."{$trigger_time[$trigger->triggerTime]} {$trigger_event[$trigger->triggerEvent]} "
-                                      ."ON `{$definition->getName()}`\n"
+                                      ."ON `{$definition->getTableName()}`\n"
                                       ."FOR EACH ROW\n"
                                       ."BEGIN\n"
                                       ."{$trigger->query}\n"
@@ -82,7 +82,7 @@ class Schema
         return $queries;
     }
 
-    private static function createRecordQueries(Table $definition, array $records) : array
+    private static function createRecordQueries(Entity $definition, array $records) : array
     {
         $queries = [];
 
@@ -115,7 +115,7 @@ class Schema
                     }
                     else
                     {
-                        $default  = $definition->getColumns()[$record_obj->columns[$i]]->default;
+                        $default  = $definition->getTableColumns()[$record_obj->columns[$i]]->default;
                         $values[] = ($default == "NULL" ?: "'{$default}'");
                     }
                 }
@@ -123,7 +123,7 @@ class Schema
                 $record_list[] = '('.implode(',', $values).')';
             }
 
-            $queries[] = "INSERT %IF_NOT_EXISTS% INTO `{$definition->getName()}`\n    ({$columns_string})\n"
+            $queries[] = "INSERT %IF_NOT_EXISTS% INTO `{$definition->getTableName()}`\n    ({$columns_string})\n"
                         ."VALUES\n    ".implode(",\n    ", $record_list);
         }
 

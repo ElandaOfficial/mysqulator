@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 //======================================================================================================================
-namespace sql;
+namespace elsa\sql;
 
 //======================================================================================================================
 use Exception;
@@ -115,7 +115,7 @@ class Gateway
      *  @return array | null An array of results of the SELECT query in the format of the fetch mode, null if an
      *                       error occurred
      */
-    public function select(string $from, array $columns, string $additionalConstraints = "",
+    public function select(string $from, array $columns, string $additionalConstraints = "", array $data = [],
                            int $fetchMode = PDO::FETCH_ASSOC, mixed ...$fetchParameters) : ?array
     {
         $selectors = implode(',', array_map(function($string){ return "`{$string}`"; }, $columns));
@@ -123,7 +123,7 @@ class Gateway
                                          {$selectors}
                                      FROM
                                          `{$from}`
-                                     {$additionalConstraints};");
+                                     {$additionalConstraints};", $data);
 
         if ($result->success)
         {

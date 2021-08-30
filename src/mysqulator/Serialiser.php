@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 //======================================================================================================================
-namespace sql;
+namespace elsa\sql;
 
 //======================================================================================================================
 use Attribute;
@@ -14,23 +14,23 @@ use ReflectionException;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
-use sql\mod\AutoIncrement;
-use sql\mod\Column;
-use sql\mod\constraint\Reference;
-use sql\mod\constraint\Unique;
-use sql\mod\DefaultsTo;
-use sql\mod\EnumSetValues;
-use sql\mod\Id;
-use sql\mod\Ignore;
-use sql\mod\NamingStrategy;
-use sql\mod\PrimaryKey;
-use sql\mod\Record;
-use sql\mod\Table;
-use sql\mod\Trigger;
-use sql\mod\Type;
-use sql\mod\Unsigned;
-use sql\mod\UpdateTimestamp;
-use sql\mod\Zerofill;
+use elsa\sql\mod\AutoIncrement;
+use elsa\sql\mod\Column;
+use elsa\sql\mod\constraint\Reference;
+use elsa\sql\mod\constraint\Unique;
+use elsa\sql\mod\DefaultsTo;
+use elsa\sql\mod\EnumSetValues;
+use elsa\sql\mod\Id;
+use elsa\sql\mod\Ignore;
+use elsa\sql\mod\NamingStrategy;
+use elsa\sql\mod\PrimaryKey;
+use elsa\sql\mod\Record;
+use elsa\sql\mod\Entity;
+use elsa\sql\mod\Trigger;
+use elsa\sql\mod\Type;
+use elsa\sql\mod\Unsigned;
+use elsa\sql\mod\UpdateTimestamp;
+use elsa\sql\mod\Zerofill;
 
 //======================================================================================================================
 abstract class Serialiser
@@ -40,23 +40,23 @@ abstract class Serialiser
      *  @throws ReflectionException
      *  @throws Exception
      */
-    public static function getTableDefinition(string $class) : ?TableDefinition
+    public static function getTableDefinition(string $class, array &$columnMappingsOut = null) : ?TableDefinition
     {
         $table      = null;
         $refl_class = new ReflectionClass($class);
         $attributes = self::getNamedAttributeArray($refl_class);
 
-        if (array_key_exists(Table::class, $attributes) && !array_key_exists(Ignore::class, $attributes))
+        if (array_key_exists(Entity::class, $attributes) && !array_key_exists(Ignore::class, $attributes))
         {
-            $columns      = self::getColumns($attributes, $refl_class->getProperties());
+            $columns      = self::getColumns($attributes, $refl_class->getProperties(), $columnMappingsOut);
             $primary_keys = array_filter($columns, function ($column) { return $column->primary; });
             $primary_key  = null;
 
             if (count($primary_keys) > 1)
             {
                 throw new Exception("Invalid column constraint: There is already a primary key specified, "
-                                    ."multiple primary keys are not suppoerted ("
-                                    .array_key_first($primary_keys).")");
+                                   ."multiple primary keys are not suppoerted ("
+                                   .array_key_first($primary_keys).")");
             }
             else if (count($primary_keys) > 0)
             {
@@ -82,7 +82,7 @@ abstract class Serialiser
                 $primary_key = $primary_key_name;
             }
 
-            $table_def = $attributes[Table::class]->newInstance();
+            $table_def = $attributes[Entity::class]->newInstance();
             $name      = trim($table_def->name);
 
             if ($name == "")
@@ -310,14 +310,54 @@ abstract class Serialiser
     }
 
     //==================================================================================================================
+    private static function getTypeFromColumn(ColumnDefinition $definition) : string
+    {
+        $unsigned_string = ($definition->unsigned ? ' UNSIGNED' : '');
+        $zerofill_string = ($definition->zerofill ? ' ZEROFILL' : '');
+
+        if (in_array($definition->type, ['CHAR', 'VARCHAR', 'BINARY', 'VARBINARY', 'TEXT', 'BLOB', 'BIT', 'TINYINT',
+            'SMALLINT', 'MEDIUMINT', 'INT', 'INTEGER', 'BIGINT']))
+        {
+            if ($definition->size > -1)
+            {
+                return "{$definition->type}({$definition->size})".$unsigned_string.$zerofill_string;
+            }
+        }
+        else if (in_array($definition->type, ['FLOAT', 'DOUBLE', 'DOUBLE_PRECISION', 'DECIMAL', 'DEC']))
+        {
+            if ($definition->size > -1 && $definition->precision > -1)
+            {
+                return "{$definition->type}({$definition->size},{$definition->precision})"
+                    .$unsigned_string.$zerofill_string;
+            }
+        }
+        else if (in_array($definition->type, ['DATETIME', 'TIMESTAMP', 'TIME']))
+        {
+            if ($definition->precision > -1)
+            {
+                return "{$definition->type}({$definition->precision})".$unsigned_string.$zerofill_string;
+            }
+        }
+        else if (in_array($definition->type, ['ENUM', 'SET']))
+        {
+            $values = array_map(function($val) { return "'{$val}'"; }, $definition->enumSetValues);
+            return "{$definition->type}(".implode(',', $values).")".$unsigned_string.$zerofill_string;
+        }
+
+        return "{$definition->type}".$unsigned_string.$zerofill_string;
+    }
+
     /**
      *  @param ReflectionAttribute[] $classAttributes
      *  @param ReflectionProperty[] $classProperties
      *  @return ColumnDefinition[]
      *  @throws Exception
      */
-    private static function getColumns(array $classAttributes, array $classProperties) : array
+    private static function getColumns(array $classAttributes, array $classProperties,
+                                       array &$columnMappingsOut = null) : array
     {
+
+        $columnMappingsOut = [];
         /** @var ColumnDefinition[] $result */
         $result                  = [];
         $default_naming_strategy = NamingStrategy::UNDERSCORE_SEPARATED_LOWER_CASE;
@@ -370,7 +410,7 @@ abstract class Serialiser
 
                 if ($col_def->nullable && !$property->getType()->allowsNull())
                 {
-                    throw new Exception("Property '{$property->name}' is not nullable even though column is.");
+                    throw new Exception("Property '{$property->getName()}' is not nullable even though column is.");
                 }
 
                 /** @var string[] $enumSet */
@@ -394,6 +434,11 @@ abstract class Serialiser
                 $primary = array_key_exists(PrimaryKey::class, $attributes)
                            || array_key_exists(Id::class, $attributes);
 
+                if (!is_null($columnMappingsOut))
+                {
+                    $columnMappingsOut[$property->getName()] = $name;
+                }
+
                 $column = new ColumnDefinition($name, $col_def->nullable, $col_def->unique, $col_def->precision,
                                                $col_def->size, $type, $enumSet, $default, $auto_increment, $primary,
                                                array_key_exists(Unsigned::class,        $attributes),
@@ -415,15 +460,15 @@ abstract class Serialiser
      *  @param ReflectionClass | ReflectionProperty | ReflectionMethod $attributeHolder
      *  @throws ReflectionException
      */
-    #[ArrayShape([Trigger::class=>'sql\mod\Trigger[]', Record::class=>'sql\mod\Record[]', Table::class=>Table::class,
+    #[ArrayShape([Trigger::class=>'elsa\sql\mod\Trigger[]', Record::class=>'elsa\sql\mod\Record[]', Entity::class=>Entity::class,
                   Ignore::class=>Ignore::class, Column::class=>Column::class, Id::class=>Id::class,
                   PrimaryKey::class=>PrimaryKey::class, DefaultsTo::class=>DefaultsTo::class,
                   EnumSetValues::class=>EnumSetValues::class, Type::class=>Type::class,
                   Unsigned::class=>Unsigned::class, Zerofill::class=>Zerofill::class,
                   UpdateTimestamp::class=>UpdateTimestamp::class, AutoIncrement::class=>AutoIncrement::class,
                   NamingStrategy::class=>NamingStrategy::class,
-                  Unique::class=>'sql\mod\constraint\Unique[]',
-                  Reference::class=>'sql\mod\constraint\Reference[]'])]
+                  Unique::class=>'elsa\sql\mod\constraint\Unique[]',
+                  Reference::class=>'elsa\sql\mod\constraint\Reference[]'])]
     private static function getNamedAttributeArray(mixed $attributeHolder) : array
     {
         $result = [];
@@ -455,8 +500,33 @@ abstract class Serialiser
         return (($att->flags & Attribute::IS_REPEATABLE) == Attribute::IS_REPEATABLE);
     }
 
+    /** @throws ReflectionException */
+    public static function getNamingStrategyForTarget(string $class, ?string $property = null) : int
+    {
+        $refl_class                 = new ReflectionClass($class);
+        $naming_strategy_attributes = $refl_class->getAttributes(NamingStrategy::class);
+        $naming_strategy            = NamingStrategy::UNDERSCORE_SEPARATED_LOWER_CASE;
+
+        if (count($naming_strategy_attributes) > 0)
+        {
+            $naming_strategy = (int) $naming_strategy_attributes[0]->getArguments()[0];
+        }
+
+        if (!is_null($property) && $refl_class->hasProperty($property))
+        {
+            $naming_strategy_attributes = $refl_class->getProperty($property)->getAttributes(NamingStrategy::class);
+
+            if (count($naming_strategy_attributes) > 0)
+            {
+                $naming_strategy = (int) $naming_strategy_attributes[0]->getArguments()[0];
+            }
+        }
+
+        return $naming_strategy;
+    }
+
     /** @throws Exception */
-    private static function getNameForStrategy(string $name, int $strategy) : string
+    public static function getNameForStrategy(string $name, int $strategy) : string
     {
         switch ($strategy)
         {

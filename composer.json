@@ -16,7 +16,7 @@
     },
     "autoload": {
         "psr-4": {
-            "sql\\": "src/mysqulator/"
+            "elsa\\sql\\": "src/mysqulator/"
         }
     }
 }

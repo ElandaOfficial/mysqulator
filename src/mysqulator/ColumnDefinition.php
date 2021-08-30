@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 //======================================================================================================================
-namespace sql;
+namespace elsa\sql;
 
 //======================================================================================================================
 
 /**
- *  A POD class containing all relevant data representing a mysql table column.
+ *  A POD class containing all relevant dao representing a mysql table column.
  *  This class is meant to be internal but can be used for anything it's needed for.
  */
 class ColumnDefinition
@@ -18,7 +18,7 @@ class ColumnDefinition
      *  @param string   $name            The name of the column
      *  @param bool     $nullable        Whether the column accepts null values
      *  @param bool     $unique          Whether the column accepts only unique values across the entire table
-     *  @param int      $precision       Represents several aspects of the data type in this column
+     *  @param int      $precision       Represents several aspects of the dao type in this column
      *                                   <table>
      *                                       <tr>
      *                                           <th>Types</th>
@@ -48,7 +48,7 @@ class ColumnDefinition
      *                                           </td>
      *                                       </tr>
      *                                   </table>
-     *  @param int      $size            Represents the size of the data type in this column
+     *  @param int      $size            Represents the size of the dao type in this column
      *                                   If this is specified together with one of FLOAT, DOUBLE, DOUBLE PRECISION,
      *                                   DECIMAL or DEC and the precision parameter,
      *                                   this will be the amount of total digits,
